@@ -542,6 +542,15 @@ export function AnalyzePanel() {
                           {groupStart ? " (1)" : ""}
                         </span>
                       )}
+                      {record.person_id !== null &&
+                        record.person_id !== undefined && (
+                          <span
+                            className="px-1 py-px rounded text-[10px] bg-fuchsia-100 text-fuchsia-800"
+                            title="ID de persona (cluster ArcFace)"
+                          >
+                            p{record.person_id}
+                          </span>
+                        )}
                     </div>
                     <div className="text-[10px] text-neutral-500">
                       {record.width}×{record.height} ·

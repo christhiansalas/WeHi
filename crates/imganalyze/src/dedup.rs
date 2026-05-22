@@ -160,6 +160,7 @@ mod tests {
             duplicate_group: None,
             is_group_winner: false,
             status: CullStatus::Undecided,
+            person_id: None,
         }
     }
 

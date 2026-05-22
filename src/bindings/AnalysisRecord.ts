@@ -8,4 +8,11 @@ import type { SubScores } from "./SubScores";
 /**
  * Registro completo del análisis de una foto del lote.
  */
-export type AnalysisRecord = { path: string, file_size: number, modified: { secs_since_epoch: number; nanos_since_epoch: number }, width: number, height: number, capture_time: { secs_since_epoch: number; nanos_since_epoch: number } | null, content_hash: number[], perceptual_hash: number, quality: QualityMetrics, aesthetic: AestheticScore | null, faces: FaceSummary | null, sub_scores: SubScores, composite_score: number, duplicate_group: number | null, is_group_winner: boolean, status: CullStatus, };
+export type AnalysisRecord = { path: string, file_size: number, modified: { secs_since_epoch: number; nanos_since_epoch: number }, width: number, height: number, capture_time: { secs_since_epoch: number; nanos_since_epoch: number } | null, content_hash: number[], perceptual_hash: number, quality: QualityMetrics, aesthetic: AestheticScore | null, faces: FaceSummary | null, sub_scores: SubScores, composite_score: number, duplicate_group: number | null, is_group_winner: boolean, status: CullStatus, 
+/**
+ * ID de persona asignado por el clustering ArcFace en la cara
+ * principal. `None` si no hay cara o no había modelo ArcFace.
+ * Los IDs son locales al lote: cambiar la composición puede
+ * renumerarlos.
+ */
+person_id: number | null, };

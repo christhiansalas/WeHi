@@ -89,6 +89,12 @@ pub struct AnalysisRecord {
     pub duplicate_group: Option<u32>,
     pub is_group_winner: bool,
     pub status: CullStatus,
+    /// ID de persona asignado por el clustering ArcFace en la cara
+    /// principal. `None` si no hay cara o no había modelo ArcFace.
+    /// Los IDs son locales al lote: cambiar la composición puede
+    /// renumerarlos.
+    #[serde(default)]
+    pub person_id: Option<u32>,
 }
 
 // Placeholder no-op para acallar al linter; `TsSystemTime` solo
@@ -142,6 +148,7 @@ mod tests {
             duplicate_group: Some(3),
             is_group_winner: true,
             status: CullStatus::Keep,
+            person_id: Some(0),
         }
     }
 
@@ -161,6 +168,7 @@ mod tests {
         original.capture_time = None;
         original.duplicate_group = None;
         original.is_group_winner = false;
+        original.person_id = None;
 
         let json = serde_json::to_string(&original).expect("serializa");
         let recuperado: AnalysisRecord = serde_json::from_str(&json).expect("deserializa");

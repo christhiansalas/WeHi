@@ -23,6 +23,10 @@ use crate::record::{AestheticScore, FaceSummary};
 pub struct AiEngineConfig {
     pub aesthetic_model: Option<PathBuf>,
     pub faces_model: Option<PathBuf>,
+    /// Modelo ArcFace (InsightFace o equivalente). Activa el
+    /// reconocimiento de personas: cada cara detectada se transforma
+    /// en un embedding 512D que se clusteriza al final del lote.
+    pub arcface_model: Option<PathBuf>,
     /// Lado al que se redimensiona la imagen antes de pasarla al
     /// modelo de estética. La mayoría de los modelos NIMA esperan 224.
     pub aesthetic_input_size: u32,
@@ -31,6 +35,8 @@ pub struct AiEngineConfig {
     pub faces_input_size: u32,
     /// Umbral de confianza para considerar una detección como cara.
     pub faces_confidence_threshold: f32,
+    /// Lado del recorte de cara que espera ArcFace (típicamente 112).
+    pub arcface_input_size: u32,
 }
 
 impl AiEngineConfig {
@@ -38,9 +44,11 @@ impl AiEngineConfig {
         Self {
             aesthetic_model: None,
             faces_model: None,
+            arcface_model: None,
             aesthetic_input_size: 224,
             faces_input_size: 320,
             faces_confidence_threshold: 0.6,
+            arcface_input_size: 112,
         }
     }
 }
@@ -54,6 +62,7 @@ type RunnableModel = Arc<TypedRunnableModel<TypedModel>>;
 pub struct AiEngine {
     aesthetic: Option<AestheticEngine>,
     faces: Option<FaceEngine>,
+    arcface: Option<ArcFaceEngine>,
 }
 
 #[derive(Clone)]
@@ -67,6 +76,12 @@ struct FaceEngine {
     model: RunnableModel,
     input_size: u32,
     confidence_threshold: f32,
+}
+
+#[derive(Clone)]
+struct ArcFaceEngine {
+    model: RunnableModel,
+    input_size: u32,
 }
 
 impl AiEngine {
@@ -87,7 +102,15 @@ impl AiEngine {
             )?),
             None => None,
         };
-        Ok(Self { aesthetic, faces })
+        let arcface = match cfg.arcface_model.as_deref() {
+            Some(p) => Some(ArcFaceEngine::load(p, cfg.arcface_input_size)?),
+            None => None,
+        };
+        Ok(Self {
+            aesthetic,
+            faces,
+            arcface,
+        })
     }
 
     pub fn has_aesthetic(&self) -> bool {
@@ -96,6 +119,10 @@ impl AiEngine {
 
     pub fn has_faces(&self) -> bool {
         self.faces.is_some()
+    }
+
+    pub fn has_arcface(&self) -> bool {
+        self.arcface.is_some()
     }
 
     /// Aplica el modelo de estética. Devuelve `None` si no hay
@@ -108,6 +135,21 @@ impl AiEngine {
     /// cargado.
     pub fn faces(&self, img: &DynamicImage) -> Option<Result<FaceSummary, ImgError>> {
         self.faces.as_ref().map(|m| m.detect(img))
+    }
+
+    /// Igual que [`faces`] pero también devuelve las cajas crudas para
+    /// poder recortar la cara y pasarla a ArcFace.
+    pub fn faces_with_boxes(
+        &self,
+        img: &DynamicImage,
+    ) -> Option<Result<(FaceSummary, Vec<FaceBox>), ImgError>> {
+        self.faces.as_ref().map(|m| m.detect_with_boxes(img))
+    }
+
+    /// Embedding L2-normalizado de un recorte de cara. Devuelve `None`
+    /// si no hay ArcFace cargado.
+    pub fn arcface_embed(&self, face_crop: &DynamicImage) -> Option<Result<Vec<f32>, ImgError>> {
+        self.arcface.as_ref().map(|m| m.embed(face_crop))
     }
 }
 
@@ -182,6 +224,14 @@ impl FaceEngine {
     /// dimensión incluye `(x1, y1, x2, y2, score)` en coordenadas
     /// normalizadas 0..1.
     fn detect(&self, img: &DynamicImage) -> Result<FaceSummary, ImgError> {
+        let (summary, _) = self.detect_with_boxes(img)?;
+        Ok(summary)
+    }
+
+    fn detect_with_boxes(
+        &self,
+        img: &DynamicImage,
+    ) -> Result<(FaceSummary, Vec<FaceBox>), ImgError> {
         let tensor = preprocess_nchw(img, self.input_size, self.input_size);
         let outputs = self
             .model
@@ -191,7 +241,88 @@ impl FaceEngine {
             .first()
             .ok_or_else(|| ImgError::processing("salida de caras vacía"))?;
         let boxes = extract_face_boxes(view, self.confidence_threshold)?;
-        Ok(summarize_faces(&boxes))
+        let summary = summarize_faces(&boxes);
+        Ok((summary, boxes))
+    }
+}
+
+impl ArcFaceEngine {
+    fn load(path: &Path, input_size: u32) -> Result<Self, ImgError> {
+        Ok(Self {
+            model: load_runnable(path)?,
+            input_size,
+        })
+    }
+
+    /// Espera un recorte de cara ya aproximadamente cuadrado. Lo
+    /// reescala a `input_size×input_size`, lo normaliza al rango
+    /// `[-1, 1]` (convención InsightFace: `(x - 127.5) / 128`) y
+    /// devuelve el embedding 512D L2-normalizado.
+    fn embed(&self, face_crop: &DynamicImage) -> Result<Vec<f32>, ImgError> {
+        let tensor = preprocess_arcface(face_crop, self.input_size);
+        let outputs = self
+            .model
+            .run(tvec!(tensor.into()))
+            .map_err(|e| ImgError::processing(format!("inferencia arcface: {e}")))?;
+        let view = outputs
+            .first()
+            .ok_or_else(|| ImgError::processing("salida arcface vacía"))?;
+        let raw = view
+            .to_array_view::<f32>()
+            .map_err(|e| ImgError::processing(format!("arcface no f32: {e}")))?;
+        let mut emb: Vec<f32> = raw.iter().copied().collect();
+        l2_normalize_inplace(&mut emb);
+        Ok(emb)
+    }
+}
+
+/// Recorta una cara de la imagen original usando coordenadas
+/// normalizadas. Expande la caja un 25% para captar contexto
+/// (orejas/frente) ya que ArcFace fue entrenado con recortes así.
+/// Si la caja queda fuera de la imagen, recorta lo que se pueda.
+pub fn crop_face_with_margin(img: &DynamicImage, b: &FaceBox) -> DynamicImage {
+    let w = img.width() as f32;
+    let h = img.height() as f32;
+    let margin = 0.25;
+    let bw = (b.w * (1.0 + margin)).clamp(0.0, 1.0);
+    let bh = (b.h * (1.0 + margin)).clamp(0.0, 1.0);
+    let cx = b.cx.clamp(0.0, 1.0);
+    let cy = b.cy.clamp(0.0, 1.0);
+    let x1 = ((cx - bw / 2.0) * w).max(0.0) as u32;
+    let y1 = ((cy - bh / 2.0) * h).max(0.0) as u32;
+    let crop_w = ((bw * w) as u32).max(1).min(img.width().saturating_sub(x1));
+    let crop_h = ((bh * h) as u32)
+        .max(1)
+        .min(img.height().saturating_sub(y1));
+    img.crop_imm(x1, y1, crop_w, crop_h)
+}
+
+/// Preprocesa el recorte de cara como espera ArcFace/InsightFace:
+/// RGB, NCHW, `(x - 127.5) / 128.0`.
+fn preprocess_arcface(face: &DynamicImage, size: u32) -> Tensor {
+    let small = face
+        .resize_exact(size, size, FilterType::Triangle)
+        .to_rgb8();
+    let mut data = vec![0f32; 3 * (size as usize) * (size as usize)];
+    let plane = (size as usize) * (size as usize);
+    for (i, pixel) in small.pixels().enumerate() {
+        let [r, g, b] = pixel.0;
+        data[i] = (r as f32 - 127.5) / 128.0;
+        data[plane + i] = (g as f32 - 127.5) / 128.0;
+        data[2 * plane + i] = (b as f32 - 127.5) / 128.0;
+    }
+    tract_ndarray::Array4::from_shape_vec((1, 3, size as usize, size as usize), data)
+        .expect("forma NCHW válida")
+        .into_tensor()
+}
+
+/// L2-normaliza un vector en sitio. Si la norma es 0, lo deja como está.
+fn l2_normalize_inplace(v: &mut [f32]) {
+    let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > 1e-12 {
+        for x in v.iter_mut() {
+            *x /= norm;
+        }
     }
 }
 
@@ -233,13 +364,22 @@ fn extract_probs(tensor: &Tensor, expected: usize) -> Result<Vec<f32>, ImgError>
     }
 }
 
-/// Caja delimitadora normalizada: (cx, cy, w, h, score) en 0..1.
+/// Caja delimitadora normalizada: (cx, cy, w, h) en 0..1.
+/// Pública para que el orquestador del lote pueda recortar la cara
+/// dominante y pasársela a [`AiEngine::arcface_embed`].
 #[derive(Debug, Clone, Copy)]
-struct FaceBox {
-    cx: f32,
-    cy: f32,
-    w: f32,
-    h: f32,
+pub struct FaceBox {
+    pub cx: f32,
+    pub cy: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl FaceBox {
+    /// Área normalizada (w*h, ambos en 0..1).
+    pub fn area(&self) -> f32 {
+        (self.w * self.h).max(0.0)
+    }
 }
 
 fn extract_face_boxes(tensor: &Tensor, threshold: f32) -> Result<Vec<FaceBox>, ImgError> {

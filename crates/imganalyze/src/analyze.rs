@@ -17,12 +17,17 @@ use rayon::prelude::*;
 
 use imgcore::ImgError;
 
-use crate::ai::AiEngine;
+use crate::ai::{crop_face_with_margin, AiEngine, FaceBox};
 use crate::dedup::{assign_duplicate_groups, DedupConfig};
 use crate::hashing::{content_hash, perceptual_hash};
+use crate::persons::cluster_persons;
 use crate::quality::compute_quality;
 use crate::record::{AnalysisRecord, CullStatus, SubScores};
 use crate::scoring::{score_batch, ScoringWeights};
+
+/// Similitud coseno mínima para considerar misma persona. Calibrado
+/// para los embeddings 512D de ArcFace/InsightFace.
+const ARCFACE_CLUSTER_THRESHOLD: f32 = 0.5;
 
 /// Error por archivo dentro de un lote.
 #[derive(Debug, Clone)]
@@ -34,6 +39,18 @@ pub struct BatchError {
 /// Analiza una foto y devuelve un `AnalysisRecord` SIN puntaje
 /// compuesto (eso lo hace `score_batch` cuando se conoce el lote).
 pub fn analyze_photo(path: &Path, ai: Option<&AiEngine>) -> Result<AnalysisRecord, ImgError> {
+    let (record, _) = analyze_photo_with_embedding(path, ai)?;
+    Ok(record)
+}
+
+/// Igual que [`analyze_photo`] pero también devuelve el embedding
+/// ArcFace de la cara principal (si los modelos están cargados y se
+/// detectó al menos una cara). El orquestador del lote usa esta
+/// función para luego clusterizar las personas.
+pub fn analyze_photo_with_embedding(
+    path: &Path,
+    ai: Option<&AiEngine>,
+) -> Result<(AnalysisRecord, Option<Vec<f32>>), ImgError> {
     let content_hash_val = content_hash(path)?;
     let metadata = std::fs::metadata(path).map_err(|e| ImgError::io(path, e))?;
     let file_size = metadata.len();
@@ -48,26 +65,64 @@ pub fn analyze_photo(path: &Path, ai: Option<&AiEngine>) -> Result<AnalysisRecor
     let capture_time = read_capture_time(path);
 
     let aesthetic = ai.and_then(|e| e.aesthetic(&img)).and_then(|r| r.ok());
-    let faces = ai.and_then(|e| e.faces(&img)).and_then(|r| r.ok());
 
-    Ok(AnalysisRecord {
-        path: path.to_path_buf(),
-        file_size,
-        modified,
-        width,
-        height,
-        capture_time,
-        content_hash: content_hash_val,
-        perceptual_hash: perceptual_hash_val,
-        quality,
-        aesthetic,
-        faces,
-        sub_scores: SubScores::default(),
-        composite_score: 0.0,
-        duplicate_group: None,
-        is_group_winner: false,
-        status: CullStatus::Undecided,
-    })
+    // Detección de caras + cajas para alimentar ArcFace.
+    let (faces, main_box) = match ai.and_then(|e| e.faces_with_boxes(&img)) {
+        Some(Ok((summary, boxes))) => {
+            let main = boxes
+                .iter()
+                .max_by(|a, b| {
+                    a.area()
+                        .partial_cmp(&b.area())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .copied();
+            (Some(summary), main)
+        }
+        _ => (None, None),
+    };
+
+    let embedding = compute_face_embedding(ai, &img, main_box.as_ref());
+
+    Ok((
+        AnalysisRecord {
+            path: path.to_path_buf(),
+            file_size,
+            modified,
+            width,
+            height,
+            capture_time,
+            content_hash: content_hash_val,
+            perceptual_hash: perceptual_hash_val,
+            quality,
+            aesthetic,
+            faces,
+            sub_scores: SubScores::default(),
+            composite_score: 0.0,
+            duplicate_group: None,
+            is_group_winner: false,
+            status: CullStatus::Undecided,
+            person_id: None,
+        },
+        embedding,
+    ))
+}
+
+fn compute_face_embedding(
+    ai: Option<&AiEngine>,
+    img: &image::DynamicImage,
+    main_box: Option<&FaceBox>,
+) -> Option<Vec<f32>> {
+    let ai = ai?;
+    let face_box = main_box?;
+    if !ai.has_arcface() {
+        return None;
+    }
+    let crop = crop_face_with_margin(img, face_box);
+    match ai.arcface_embed(&crop) {
+        Some(Ok(emb)) => Some(emb),
+        _ => None,
+    }
 }
 
 /// Analiza un lote en paralelo. Devuelve los registros calculados y
@@ -78,20 +133,34 @@ pub fn analyze_batch(
     ai: Option<&AiEngine>,
     weights: &ScoringWeights,
 ) -> (Vec<AnalysisRecord>, Vec<BatchError>) {
-    let collected: Vec<(PathBuf, Result<AnalysisRecord, ImgError>)> = paths
+    type PhotoResult = Result<(AnalysisRecord, Option<Vec<f32>>), ImgError>;
+    let collected: Vec<(PathBuf, PhotoResult)> = paths
         .par_iter()
-        .map(|p| (p.clone(), analyze_photo(p, ai)))
+        .map(|p| (p.clone(), analyze_photo_with_embedding(p, ai)))
         .collect();
 
     let mut records = Vec::with_capacity(collected.len());
+    let mut embeddings: Vec<Option<Vec<f32>>> = Vec::with_capacity(collected.len());
     let mut errors = Vec::new();
     for (path, result) in collected {
         match result {
-            Ok(rec) => records.push(rec),
+            Ok((rec, emb)) => {
+                records.push(rec);
+                embeddings.push(emb);
+            }
             Err(e) => errors.push(BatchError {
                 path,
                 error: e.to_string(),
             }),
+        }
+    }
+
+    // Clustering de personas: solo tiene efecto si ArcFace estaba
+    // cargado y al menos una foto produjo embedding.
+    if embeddings.iter().any(|e| e.is_some()) {
+        let assignments = cluster_persons(&embeddings, ARCFACE_CLUSTER_THRESHOLD);
+        for (rec, pid) in records.iter_mut().zip(assignments) {
+            rec.person_id = pid;
         }
     }
 
