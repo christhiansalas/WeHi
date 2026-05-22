@@ -58,7 +58,16 @@ mod tests {
         let mut buf = RgbaImage::new(w, h);
         for y in 0..h {
             for x in 0..w {
-                buf.put_pixel(x, y, Rgba([(x as u8).wrapping_mul(3), (y as u8).wrapping_mul(7), 100, 255]));
+                buf.put_pixel(
+                    x,
+                    y,
+                    Rgba([
+                        (x as u8).wrapping_mul(3),
+                        (y as u8).wrapping_mul(7),
+                        100,
+                        255,
+                    ]),
+                );
             }
         }
         DynamicImage::ImageRgba8(buf)

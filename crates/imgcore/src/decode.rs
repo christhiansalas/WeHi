@@ -34,7 +34,11 @@ pub fn decode(path: &Path) -> Result<DynamicImage, ImgError> {
 fn is_standard(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .map(|e| STANDARD_EXTENSIONS.iter().any(|s| s.eq_ignore_ascii_case(e)))
+        .map(|e| {
+            STANDARD_EXTENSIONS
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case(e))
+        })
         .unwrap_or(false)
 }
 

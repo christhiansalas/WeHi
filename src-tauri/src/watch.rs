@@ -14,20 +14,22 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use ts_rs::TS;
 
-
 /// Mismo set que `commands::SUPPORTED_EXTENSIONS`. Lo replicamos aquí
 /// para no acoplar módulos.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     // Imágenes
-    "jpg", "jpeg", "png", "webp", "cr2", "cr3", "nef", "nrw",
-    // Videos
+    "jpg", "jpeg", "png", "webp", "cr2", "cr3", "nef", "nrw", // Videos
     "mp4", "mov", "m4v", "webm", "mkv", "avi",
 ];
 
 fn is_supported(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .map(|e| SUPPORTED_EXTENSIONS.iter().any(|s| s.eq_ignore_ascii_case(e)))
+        .map(|e| {
+            SUPPORTED_EXTENSIONS
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case(e))
+        })
         .unwrap_or(false)
 }
 
@@ -98,10 +100,7 @@ pub fn start_watching(
     }
     // Cierra cualquier watcher previo antes de crear el nuevo.
     {
-        let mut guard = state
-            .inner
-            .lock()
-            .map_err(|e| format!("watch lock: {e}"))?;
+        let mut guard = state.inner.lock().map_err(|e| format!("watch lock: {e}"))?;
         *guard = None;
     }
 
@@ -127,10 +126,7 @@ pub fn start_watching(
                     );
                 }
                 tracing::info!(path = %path.display(), "tethered: archivo nuevo");
-                let _ = app_for_event.emit(
-                    "file_appeared",
-                    FileAppearedEvent { path },
-                );
+                let _ = app_for_event.emit("file_appeared", FileAppearedEvent { path });
             }
         },
         Config::default(),
@@ -141,10 +137,7 @@ pub fn start_watching(
         .watch(&path, RecursiveMode::Recursive)
         .map_err(|e| format!("watch {}: {e}", path.display()))?;
 
-    let mut guard = state
-        .inner
-        .lock()
-        .map_err(|e| format!("watch lock: {e}"))?;
+    let mut guard = state.inner.lock().map_err(|e| format!("watch lock: {e}"))?;
     *guard = Some(WatchSession {
         _watcher: watcher,
         folder: path.clone(),
@@ -156,10 +149,7 @@ pub fn start_watching(
 
 #[tauri::command]
 pub fn stop_watching(state: State<'_, WatchState>) -> Result<(), String> {
-    let mut guard = state
-        .inner
-        .lock()
-        .map_err(|e| format!("watch lock: {e}"))?;
+    let mut guard = state.inner.lock().map_err(|e| format!("watch lock: {e}"))?;
     let had = guard.is_some();
     *guard = None;
     if had {
@@ -170,10 +160,7 @@ pub fn stop_watching(state: State<'_, WatchState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn watch_status(state: State<'_, WatchState>) -> Result<WatchStatus, String> {
-    let guard = state
-        .inner
-        .lock()
-        .map_err(|e| format!("watch lock: {e}"))?;
+    let guard = state.inner.lock().map_err(|e| format!("watch lock: {e}"))?;
     Ok(match guard.as_ref() {
         Some(session) => WatchStatus {
             watching: true,

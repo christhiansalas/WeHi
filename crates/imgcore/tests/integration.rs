@@ -23,10 +23,8 @@ struct Fixtures {
 fn fixtures() -> &'static Fixtures {
     static F: OnceLock<Fixtures> = OnceLock::new();
     F.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!(
-            "wehi_imgcore_fixtures_{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wehi_imgcore_fixtures_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("crear fixtures dir");
 
@@ -83,7 +81,12 @@ fn save_jpeg(path: &Path, img: &RgbaImage, quality: u8) {
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, quality);
     use image::ImageEncoder;
     encoder
-        .write_image(rgb.as_raw(), rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)
+        .write_image(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
         .unwrap();
     std::fs::write(path, &bytes).unwrap();
 }
@@ -327,7 +330,10 @@ fn pipeline_con_archivo_inexistente_da_error_de_io() {
     let err = process_file(&f.dir.join("noexiste.jpg"), &preset, &empty).unwrap_err();
     let msg = format!("{err}").to_lowercase();
     assert!(
-        msg.contains("e/s") || msg.contains("io") || msg.contains("no such") || msg.contains("decod"),
+        msg.contains("e/s")
+            || msg.contains("io")
+            || msg.contains("no such")
+            || msg.contains("decod"),
         "mensaje raro: {msg}"
     );
 }

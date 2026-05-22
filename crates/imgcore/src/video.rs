@@ -103,7 +103,11 @@ pub fn probe_duration_us(input: &Path) -> u64 {
     let tool = if ffprobe.exists() {
         ffprobe
     } else {
-        PathBuf::from(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" })
+        PathBuf::from(if cfg!(windows) {
+            "ffprobe.exe"
+        } else {
+            "ffprobe"
+        })
     };
     let output = Command::new(&tool)
         .args([
@@ -142,7 +146,11 @@ pub fn probe_dimensions(input: &Path) -> Result<(u32, u32), ImgError> {
     let tool = if ffprobe.exists() {
         ffprobe
     } else {
-        PathBuf::from(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" })
+        PathBuf::from(if cfg!(windows) {
+            "ffprobe.exe"
+        } else {
+            "ffprobe"
+        })
     };
 
     let output = Command::new(&tool)
@@ -174,11 +182,15 @@ pub fn probe_dimensions(input: &Path) -> Result<(u32, u32), ImgError> {
     let w: u32 = parts
         .next()
         .and_then(|s| s.trim().parse().ok())
-        .ok_or_else(|| ImgError::processing(format!("ffprobe sin width para {}", input.display())))?;
+        .ok_or_else(|| {
+            ImgError::processing(format!("ffprobe sin width para {}", input.display()))
+        })?;
     let h: u32 = parts
         .next()
         .and_then(|s| s.trim().parse().ok())
-        .ok_or_else(|| ImgError::processing(format!("ffprobe sin height para {}", input.display())))?;
+        .ok_or_else(|| {
+            ImgError::processing(format!("ffprobe sin height para {}", input.display()))
+        })?;
     Ok((w, h))
 }
 
@@ -193,7 +205,13 @@ pub fn extract_frame(input: &Path, time_secs: f32) -> Result<DynamicImage, ImgEr
         .arg("-i")
         .arg(input)
         .args([
-            "-frames:v", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "pipe:1",
         ])
         .output()
         .map_err(|e| ImgError::processing(format!("ejecutar ffmpeg: {e}")))?;
@@ -206,18 +224,13 @@ pub fn extract_frame(input: &Path, time_secs: f32) -> Result<DynamicImage, ImgEr
         )));
     }
 
-    image::load_from_memory(&output.stdout)
-        .map_err(|e| ImgError::decode(input, e.to_string()))
+    image::load_from_memory(&output.stdout).map_err(|e| ImgError::decode(input, e.to_string()))
 }
 
 /// Calcula las dimensiones de destino para un video aplicando el
 /// mismo modo de resize que usamos en imágenes. Devuelve siempre
 /// valores pares (h264 lo requiere).
-pub fn compute_video_target(
-    orig_w: u32,
-    orig_h: u32,
-    cfg: &ResizeConfig,
-) -> (u32, u32) {
+pub fn compute_video_target(orig_w: u32, orig_h: u32, cfg: &ResizeConfig) -> (u32, u32) {
     let (mut tw, mut th) = match cfg.mode {
         ResizeMode::MaxDimension => {
             let max_w = cfg.width.unwrap_or(orig_w).max(1) as f32;
@@ -337,22 +350,18 @@ where
     for (idx, (logo_cfg, logo_path)) in logos.iter().enumerate() {
         let logo_input_idx = idx + 1; // [0:v] = video, [1:v] = primer logo, …
 
-        let (logo_orig_w, logo_orig_h) =
-            image::image_dimensions(logo_path).map_err(|e| {
-                ImgError::processing(format!("logo dims {}: {e}", logo_path.display()))
-            })?;
+        let (logo_orig_w, logo_orig_h) = image::image_dimensions(logo_path)
+            .map_err(|e| ImgError::processing(format!("logo dims {}: {e}", logo_path.display())))?;
         let logo_target_w = ((target_w as f32) * logo_cfg.scale_pct.clamp(0.001, 1.0))
             .round()
             .max(2.0) as u32;
-        let logo_target_h = ((logo_target_w as f32) * (logo_orig_h as f32)
-            / (logo_orig_w as f32))
+        let logo_target_h = ((logo_target_w as f32) * (logo_orig_h as f32) / (logo_orig_w as f32))
             .round()
             .max(2.0) as u32;
 
         // (a) Fondo opcional con drawbox.
         if let Some(bg) = logo_cfg.background.as_ref() {
-            let bg_filter =
-                build_background_drawbox(bg, logo_cfg, logo_target_w, logo_target_h);
+            let bg_filter = build_background_drawbox(bg, logo_cfg, logo_target_w, logo_target_h);
             let next_label = format!("[vbg{idx}]");
             filters.push(format!("{current_main}{bg_filter}{next_label}"));
             current_main = next_label;
@@ -376,9 +385,7 @@ where
     // en la cadena. Necesita una fuente TTF del sistema.
     if !preset.text_watermarks.is_empty() {
         let font_path = crate::text::find_system_font().ok_or_else(|| {
-            ImgError::processing(
-                "marcas de agua de texto: no se encontró fuente TTF en el sistema",
-            )
+            ImgError::processing("marcas de agua de texto: no se encontró fuente TTF en el sistema")
         })?;
         let font_str = font_path.to_string_lossy().replace('\\', "/");
         for (i, tw_cfg) in preset.text_watermarks.iter().enumerate() {
@@ -497,9 +504,7 @@ fn build_logo_filter(target_w: u32, logo_cfg: &LogoConfig) -> String {
     let scale_pct = logo_cfg.scale_pct.clamp(0.001, 1.0);
     let logo_w = ((target_w as f32) * scale_pct).round().max(2.0) as u32;
     let opacity = logo_cfg.opacity.clamp(0.0, 1.0);
-    format!(
-        "[1:v]scale={logo_w}:-1,format=rgba,colorchannelmixer=aa={opacity}[wm]"
-    )
+    format!("[1:v]scale={logo_w}:-1,format=rgba,colorchannelmixer=aa={opacity}[wm]")
 }
 
 fn build_overlay_filter(logo_cfg: &LogoConfig) -> String {
@@ -508,9 +513,7 @@ fn build_overlay_filter(logo_cfg: &LogoConfig) -> String {
     // Posiciona el CENTRO del logo en (W*cx, H*cy) y recorta para que
     // no se salga de la imagen. El backslash escapa la coma dentro de
     // la cadena de filtro de ffmpeg.
-    format!(
-        "overlay=x='max(0\\,min(W*{cx}-w/2\\,W-w))':y='max(0\\,min(H*{cy}-h/2\\,H-h))'"
-    )
+    format!("overlay=x='max(0\\,min(W*{cx}-w/2\\,W-w))':y='max(0\\,min(H*{cy}-h/2\\,H-h))'")
 }
 
 /// Construye un filtro `drawtext` de ffmpeg a partir de una
@@ -580,14 +583,8 @@ fn build_background_drawbox(
     let cy = logo_cfg.position.y.clamp(0.0, 1.0);
     // Posición del fondo: centra alrededor del centro del logo y
     // clampea para que no se salga de la imagen.
-    let bg_x = format!(
-        "max(0\\,min(W*{cx}-{}/2\\,W-{bg_w}))",
-        logo_target_w
-    );
-    let bg_y = format!(
-        "max(0\\,min(H*{cy}-{}/2\\,H-{bg_h}))",
-        logo_target_h
-    );
+    let bg_x = format!("max(0\\,min(W*{cx}-{}/2\\,W-{bg_w}))", logo_target_w);
+    let bg_y = format!("max(0\\,min(H*{cy}-{}/2\\,H-{bg_h}))", logo_target_h);
     format!(
         "drawbox=x='{bg_x}':y='{bg_y}':w={bg_w}:h={bg_h}:color=0x{r:02X}{g:02X}{b:02X}@{alpha}:t=fill"
     )

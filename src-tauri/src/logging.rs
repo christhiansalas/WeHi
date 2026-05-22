@@ -30,8 +30,7 @@ pub fn init(app_data_dir: &Path) {
     // cierra al salir del scope y los logs se truncan.
     std::mem::forget(guard);
 
-    let env_filter = EnvFilter::try_from_env("WEHI_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_env("WEHI_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
 
     let result = tracing_subscriber::registry()
         .with(env_filter)

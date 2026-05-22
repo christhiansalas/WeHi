@@ -85,8 +85,8 @@ fn do_resize(img: DynamicImage, w: u32, h: u32) -> Result<DynamicImage, ImgError
         .map_err(|e| ImgError::processing(format!("imagen fuente fr: {e}")))?;
     let mut dst = fr::images::Image::new(w, h, fr::PixelType::U8x4);
     let mut resizer = fr::Resizer::new();
-    let opts = fr::ResizeOptions::new()
-        .resize_alg(fr::ResizeAlg::Convolution(fr::FilterType::Lanczos3));
+    let opts =
+        fr::ResizeOptions::new().resize_alg(fr::ResizeAlg::Convolution(fr::FilterType::Lanczos3));
     resizer
         .resize(&src, &mut dst, &opts)
         .map_err(|e| ImgError::processing(format!("resize fr: {e}")))?;

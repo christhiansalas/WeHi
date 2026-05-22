@@ -345,8 +345,9 @@ mod tests {
 
     #[test]
     fn extract_probs_normaliza_a_distribucion() {
-        let t = tract_ndarray::Array1::from(vec![1.0f32, 1.0, 2.0, 2.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5])
-            .into_tensor();
+        let t =
+            tract_ndarray::Array1::from(vec![1.0f32, 1.0, 2.0, 2.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5])
+                .into_tensor();
         let probs = extract_probs(&t, 10).unwrap();
         let suma: f32 = probs.iter().sum();
         assert!((suma - 1.0).abs() < 1e-5, "suma fue {suma}");

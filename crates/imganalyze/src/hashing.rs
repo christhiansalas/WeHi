@@ -31,9 +31,7 @@ pub fn content_hash(path: &Path) -> Result<[u8; 32], ImgError> {
 ///    bit = 1 si `pixel > vecino_derecho`, 0 en caso contrario.
 /// 3. Concatena 8×8 = 64 bits.
 pub fn perceptual_hash(img: &DynamicImage) -> u64 {
-    let small = img
-        .resize_exact(9, 8, FilterType::Triangle)
-        .to_luma8();
+    let small = img.resize_exact(9, 8, FilterType::Triangle).to_luma8();
     let mut bits = 0u64;
     let mut bit_idx = 0u32;
     for y in 0..8u32 {
@@ -61,11 +59,8 @@ mod tests {
     use std::io::Write;
 
     fn dir_temp(nombre: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "wehi_hashing_{}_{}",
-            std::process::id(),
-            nombre
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wehi_hashing_{}_{}", std::process::id(), nombre));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

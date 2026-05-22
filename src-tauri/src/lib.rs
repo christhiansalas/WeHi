@@ -23,10 +23,7 @@ pub fn run() {
                 let metrics_state = app.state::<MetricsState>();
                 metrics_state.init(&dir);
             }
-            tracing::info!(
-                version = env!("CARGO_PKG_VERSION"),
-                "WeHi arrancando"
-            );
+            tracing::info!(version = env!("CARGO_PKG_VERSION"), "WeHi arrancando");
             Ok(())
         })
         .manage(AppState::new())

@@ -10,14 +10,12 @@ use ts_rs::TS;
 
 use imgcore::{OutputFormat, Preset};
 
-
 use crate::queue;
 use crate::state::AppState;
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     // Imágenes
-    "jpg", "jpeg", "png", "webp", "cr2", "cr3", "nef", "nrw",
-    // Videos (vía ffmpeg)
+    "jpg", "jpeg", "png", "webp", "cr2", "cr3", "nef", "nrw", // Videos (vía ffmpeg)
     "mp4", "mov", "m4v", "webm", "mkv", "avi",
 ];
 
@@ -130,10 +128,7 @@ pub fn read_preferences(app: AppHandle) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub fn write_preferences(
-    app: AppHandle,
-    preferences: serde_json::Value,
-) -> Result<(), String> {
+pub fn write_preferences(app: AppHandle, preferences: serde_json::Value) -> Result<(), String> {
     let path = preferences_path(&app)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -223,10 +218,7 @@ pub fn scan_paths(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
     Ok(out)
 }
 
-fn resolve_logos(
-    app: &AppHandle,
-    preset: &Preset,
-) -> Result<imgcore::LogoMap, String> {
+fn resolve_logos(app: &AppHandle, preset: &Preset) -> Result<imgcore::LogoMap, String> {
     use std::collections::HashMap;
     let mut map: HashMap<String, imgcore::LoadedLogo> = HashMap::new();
     let dir = logos_dir(app)?;
@@ -301,8 +293,7 @@ pub fn process_preview(
     };
 
     let img = (*source).clone();
-    let encoded =
-        imgcore::encode_pipeline(img, &preset, &logos).map_err(|e| e.to_string())?;
+    let encoded = imgcore::encode_pipeline(img, &preset, &logos).map_err(|e| e.to_string())?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&encoded.bytes);
     Ok(PreviewResult {
         base64: b64,
@@ -400,11 +391,7 @@ pub fn delete_logo(app: AppHandle, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn get_thumbnail_data_url(
-    app: AppHandle,
-    file: PathBuf,
-    size: u32,
-) -> Result<String, String> {
+pub fn get_thumbnail_data_url(app: AppHandle, file: PathBuf, size: u32) -> Result<String, String> {
     // 1) Si hay caché en disco para este (archivo + mtime + size + dim),
     //    devolverlo sin decodificar nada.
     let dir = thumbs_dir(&app)?;

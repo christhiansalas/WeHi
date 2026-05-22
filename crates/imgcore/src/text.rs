@@ -201,14 +201,8 @@ pub fn compose_text(
         return Ok(DynamicImage::ImageRgba8(base_rgba));
     }
 
-    let px_size =
-        ((bw as f32) * text_cfg.font_size_pct.clamp(0.005, 0.5)).max(8.0);
-    let text_img = render_text(
-        &resolved_text,
-        &resolved_font,
-        px_size,
-        text_cfg.color_rgba,
-    )?;
+    let px_size = ((bw as f32) * text_cfg.font_size_pct.clamp(0.005, 0.5)).max(8.0);
+    let text_img = render_text(&resolved_text, &resolved_font, px_size, text_cfg.color_rgba)?;
     let (tw, th) = text_img.dimensions();
 
     let cx = (bw as f32) * text_cfg.position.x.clamp(0.0, 1.0);

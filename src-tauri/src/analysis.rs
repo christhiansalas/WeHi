@@ -11,14 +11,15 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use ts_rs::TS;
 
-
 use imganalyze::{
     analyze_photo, assign_duplicate_groups, default_networks, format_fit, recommendation,
     score_batch, AiEngine, AiEngineConfig, AnalysisRecord, CullStatus, DedupConfig, NetworkSpec,
     ScoringWeights,
 };
 
-use crate::cache::{compute_model_version, default_cache_path, AnalysisCache, CachedEntry, SCHEMA_VERSION};
+use crate::cache::{
+    compute_model_version, default_cache_path, AnalysisCache, CachedEntry, SCHEMA_VERSION,
+};
 use crate::metrics::MetricsState;
 use crate::state::AnalysisState;
 
@@ -157,10 +158,7 @@ pub fn analyze_batch(
     let results_arc = analysis_state.results.clone();
     let dedup = dedup_config.unwrap_or_default();
 
-    let app_data = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let cache_path = default_cache_path(&app_data);
 
     let (ai_engine, model_paths) = build_ai_engine(&app, use_ai);
@@ -360,7 +358,11 @@ enum CacheHit {
     Miss,
 }
 
-type ComputedEntry = (PathBuf, [u8; 32], Result<(AnalysisRecord, CacheHit), String>);
+type ComputedEntry = (
+    PathBuf,
+    [u8; 32],
+    Result<(AnalysisRecord, CacheHit), String>,
+);
 
 fn should_pre_reject(rec: &AnalysisRecord) -> bool {
     if rec.sub_scores.sharpness < 0.20 {
@@ -505,8 +507,7 @@ pub fn move_rejects(
             Err(rename_err) => {
                 // Fallback cross-device (EXDEV) o errores de TCC:
                 // intentar copy + remove explícito.
-                match std::fs::copy(&rec.path, &dest)
-                    .and_then(|_| std::fs::remove_file(&rec.path))
+                match std::fs::copy(&rec.path, &dest).and_then(|_| std::fs::remove_file(&rec.path))
                 {
                     Ok(()) => movidos.push(dest),
                     Err(copy_err) => errores.push(AnalysisFileError {

@@ -160,11 +160,7 @@ pub fn center_crop_resize(
     )
 }
 
-pub fn process_file(
-    input: &Path,
-    preset: &Preset,
-    logos: &LogoMap,
-) -> Result<(), ImgError> {
+pub fn process_file(input: &Path, preset: &Preset, logos: &LogoMap) -> Result<(), ImgError> {
     process_file_with_progress(input, preset, logos, None, |_, _| {})
 }
 
@@ -192,9 +188,9 @@ where
         let video_logos: Vec<(&crate::config::LogoConfig, &Path)> = preset
             .all_logos()
             .map(|cfg| {
-                let lo = logos.get(&cfg.logo_id).ok_or_else(|| {
-                    ImgError::logo_not_found(&cfg.logo_id)
-                })?;
+                let lo = logos
+                    .get(&cfg.logo_id)
+                    .ok_or_else(|| ImgError::logo_not_found(&cfg.logo_id))?;
                 Ok::<_, ImgError>((cfg, lo.path.as_path()))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -214,10 +210,8 @@ where
             .and_then(|s| s.to_str())
             .map(|s| s.to_string());
         let decoded = decode(input)?;
-        let encoded =
-            encode_pipeline_named(decoded, preset, logos, filename.as_deref())?;
-        std::fs::write(&out_path, &encoded.bytes)
-            .map_err(|e| ImgError::io(&out_path, e))?;
+        let encoded = encode_pipeline_named(decoded, preset, logos, filename.as_deref())?;
+        std::fs::write(&out_path, &encoded.bytes).map_err(|e| ImgError::io(&out_path, e))?;
     } else {
         // Camino con recortes: decodifica + redimensiona + watermark
         // UNA vez, luego genera el principal y un archivo por cada
@@ -236,28 +230,20 @@ where
             composed = compose_logo(composed, logo_obj, logo_cfg)?;
         }
         for text_cfg in &preset.text_watermarks {
-            composed = text::compose_text(
-                composed,
-                text_cfg,
-                None,
-                filename.as_deref(),
-            )?;
+            composed = text::compose_text(composed, text_cfg, None, filename.as_deref())?;
         }
 
         let main_bytes = encode_image(&composed, &preset.output)?;
-        std::fs::write(&out_path, &main_bytes)
-            .map_err(|e| ImgError::io(&out_path, e))?;
+        std::fs::write(&out_path, &main_bytes).map_err(|e| ImgError::io(&out_path, e))?;
 
         for crop in &preset.network_crops {
             let cropped = center_crop_resize(&composed, crop.width, crop.height)?;
             let bytes = encode_image(&cropped, &preset.output)?;
             let crop_path = resolve_crop_output_path(input, preset, &crop.id);
             if let Some(parent) = crop_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| ImgError::io(parent, e))?;
+                std::fs::create_dir_all(parent).map_err(|e| ImgError::io(parent, e))?;
             }
-            std::fs::write(&crop_path, &bytes)
-                .map_err(|e| ImgError::io(&crop_path, e))?;
+            std::fs::write(&crop_path, &bytes).map_err(|e| ImgError::io(&crop_path, e))?;
         }
     }
     Ok(())
@@ -343,11 +329,8 @@ mod tests {
     use image::{Rgba, RgbaImage};
 
     fn dir_temporal(nombre: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "wehi_pipeline_{}_{}",
-            std::process::id(),
-            nombre
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wehi_pipeline_{}_{}", std::process::id(), nombre));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

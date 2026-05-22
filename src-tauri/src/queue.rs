@@ -17,7 +17,6 @@ use imgcore::{LogoMap, Preset};
 
 use crate::metrics::MetricsState;
 
-
 /// Semáforo contado para limitar procesos ffmpeg concurrentes.
 /// Bloquea hilos rayon cuando se alcanza el límite, evitando que
 /// múltiples ffmpeg compitan por CPU.
@@ -248,9 +247,7 @@ pub fn run_batch(
             let last_emit_us = AtomicU64::new(0);
             let on_video_progress = move |current_us: u64, total_us: u64| {
                 let last = last_emit_us.load(Ordering::Relaxed);
-                if current_us == total_us
-                    || current_us.saturating_sub(last) >= 100_000
-                {
+                if current_us == total_us || current_us.saturating_sub(last) >= 100_000 {
                     last_emit_us.store(current_us, Ordering::Relaxed);
                     let _ = app_for_progress.emit(
                         "video_progress",

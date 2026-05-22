@@ -104,9 +104,8 @@ pub fn build_ffmpeg_filter(adj: &ImageAdjustments) -> Option<String> {
     let brightness = adj.brightness.clamp(-1.0, 1.0);
     let contrast = (1.0 + adj.contrast).clamp(0.0, 3.0);
     let saturation = (1.0 + adj.saturation).clamp(0.0, 3.0);
-    let mut filter = format!(
-        "eq=brightness={brightness:.4}:contrast={contrast:.4}:saturation={saturation:.4}"
-    );
+    let mut filter =
+        format!("eq=brightness={brightness:.4}:contrast={contrast:.4}:saturation={saturation:.4}");
     // Temperatura mediante `colorbalance` (rm/bm = midtones).
     if adj.temperature != 0.0 {
         let t = adj.temperature.clamp(-1.0, 1.0) * 0.3; // ±0.3 es suave

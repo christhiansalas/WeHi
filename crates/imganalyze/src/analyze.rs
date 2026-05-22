@@ -47,9 +47,7 @@ pub fn analyze_photo(path: &Path, ai: Option<&AiEngine>) -> Result<AnalysisRecor
     let quality = compute_quality(&img);
     let capture_time = read_capture_time(path);
 
-    let aesthetic = ai
-        .and_then(|e| e.aesthetic(&img))
-        .and_then(|r| r.ok());
+    let aesthetic = ai.and_then(|e| e.aesthetic(&img)).and_then(|r| r.ok());
     let faces = ai.and_then(|e| e.faces(&img)).and_then(|r| r.ok());
 
     Ok(AnalysisRecord {
@@ -146,11 +144,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn dir_temp(nombre: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "wehi_analyze_{}_{}",
-            std::process::id(),
-            nombre
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wehi_analyze_{}_{}", std::process::id(), nombre));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -236,11 +231,8 @@ mod tests {
         guardar_png(&p1, 100, 100, [0, 0, 0, 255]);
         std::fs::write(&p2, b"esto no es un png valido").unwrap();
 
-        let (records, errors) = analyze_batch(
-            &[p1.clone(), p2.clone()],
-            None,
-            &ScoringWeights::default(),
-        );
+        let (records, errors) =
+            analyze_batch(&[p1.clone(), p2.clone()], None, &ScoringWeights::default());
         assert_eq!(records.len(), 1);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].path, p2);

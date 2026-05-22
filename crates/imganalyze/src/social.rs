@@ -7,7 +7,6 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../src/bindings/")]
 pub enum NetworkOrientation {
@@ -109,15 +108,12 @@ pub fn format_fit(
     let sy = subject_y_norm.clamp(0.0, 1.0) * h;
     let crop_x = (sx - crop_w / 2.0).clamp(0.0, w - crop_w);
     let crop_y = (sy - crop_h / 2.0).clamp(0.0, h - crop_h);
-    let subject_inside = if sx >= crop_x
-        && sx <= crop_x + crop_w
-        && sy >= crop_y
-        && sy <= crop_y + crop_h
-    {
-        1.0
-    } else {
-        0.0
-    };
+    let subject_inside =
+        if sx >= crop_x && sx <= crop_x + crop_w && sy >= crop_y && sy <= crop_y + crop_h {
+            1.0
+        } else {
+            0.0
+        };
 
     let r_w = crop_w / net.suggested_width as f32;
     let r_h = crop_h / net.suggested_height as f32;
@@ -178,10 +174,7 @@ mod tests {
             "fb_feed",
             "yt_thumb",
         ] {
-            assert!(
-                redes.iter().any(|n| n.id == esperado),
-                "falta {esperado}"
-            );
+            assert!(redes.iter().any(|n| n.id == esperado), "falta {esperado}");
         }
     }
 }

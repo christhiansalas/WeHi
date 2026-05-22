@@ -9,7 +9,6 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-
 /// Decisión del usuario sobre conservar o descartar una foto.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../src/bindings/")]
