@@ -26,6 +26,14 @@ pub struct CachedEntry {
     pub schema_version: u32,
     pub model_version: u32,
     pub record: AnalysisRecord,
+    /// Embedding ArcFace 512D de la cara principal. Se cachea aparte
+    /// del `record` porque NO debe cruzar el bridge Tauri (sería
+    /// ~2KB extra por foto por nada). Permite re-clusterizar lotes
+    /// posteriores sin tener que re-decodificar las imágenes ya
+    /// analizadas. `#[serde(default)]` para compat con cache previo
+    /// a la introducción de ArcFace.
+    #[serde(default)]
+    pub face_embedding: Option<Vec<f32>>,
 }
 
 pub struct AnalysisCache {

@@ -12,10 +12,14 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use ts_rs::TS;
 
 use imganalyze::{
-    analyze_photo, assign_duplicate_groups, default_networks, format_fit, recommendation,
-    score_batch, AiEngine, AiEngineConfig, AnalysisRecord, CullStatus, DedupConfig, NetworkSpec,
-    ScoringWeights,
+    analyze_photo_with_embedding, assign_duplicate_groups, cluster_persons, default_networks,
+    format_fit, recommendation, score_batch, AiEngine, AiEngineConfig, AnalysisRecord, CullStatus,
+    DedupConfig, NetworkSpec, ScoringWeights,
 };
+
+/// Umbral de similitud coseno para considerar misma persona en el
+/// clustering del lote. Coincide con el default del crate.
+const ARCFACE_CLUSTER_THRESHOLD: f32 = 0.5;
 
 use crate::cache::{
     compute_model_version, default_cache_path, AnalysisCache, CachedEntry, SCHEMA_VERSION,
@@ -99,10 +103,11 @@ fn find_model(app: &AppHandle, file_name: &str) -> Option<PathBuf> {
     None
 }
 
-fn ai_engine_paths(app: &AppHandle) -> (Option<PathBuf>, Option<PathBuf>) {
+fn ai_engine_paths(app: &AppHandle) -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
     (
         find_model(app, "aesthetic.onnx"),
         find_model(app, "faces.onnx"),
+        find_model(app, "arcface.onnx"),
     )
 }
 
@@ -110,16 +115,20 @@ fn build_ai_engine(app: &AppHandle, use_ai: bool) -> (Option<AiEngine>, Vec<Path
     if !use_ai {
         return (None, Vec::new());
     }
-    let (aest, faces) = ai_engine_paths(app);
+    let (aest, faces, arcface) = ai_engine_paths(app);
     let mut cfg = AiEngineConfig::new();
     cfg.aesthetic_model = aest.clone();
     cfg.faces_model = faces.clone();
+    cfg.arcface_model = arcface.clone();
     let engine = AiEngine::new(&cfg).ok();
     let mut paths = Vec::new();
     if let Some(p) = aest {
         paths.push(p);
     }
     if let Some(p) = faces {
+        paths.push(p);
+    }
+    if let Some(p) = arcface {
         paths.push(p);
     }
     (engine, paths)
@@ -129,16 +138,46 @@ fn recompute_ai_fields(
     file: &Path,
     mut record: AnalysisRecord,
     ai: Option<&AiEngine>,
-) -> Result<AnalysisRecord, imgcore::ImgError> {
-    if let Some(engine) = ai {
-        let img = imgcore::decode(file)?;
-        record.aesthetic = engine.aesthetic(&img).and_then(|r| r.ok());
-        record.faces = engine.faces(&img).and_then(|r| r.ok());
-    } else {
+) -> Result<(AnalysisRecord, Option<Vec<f32>>), imgcore::ImgError> {
+    let Some(engine) = ai else {
         record.aesthetic = None;
         record.faces = None;
-    }
-    Ok(record)
+        record.person_id = None;
+        return Ok((record, None));
+    };
+    let img = imgcore::decode(file)?;
+    record.aesthetic = engine.aesthetic(&img).and_then(|r| r.ok());
+
+    // Caras: usamos faces_with_boxes para tener la caja dominante
+    // disponible y poder alimentar ArcFace si está cargado.
+    let (face_summary, main_box) = match engine.faces_with_boxes(&img) {
+        Some(Ok((summary, boxes))) => {
+            let main = boxes
+                .iter()
+                .max_by(|a, b| {
+                    a.area()
+                        .partial_cmp(&b.area())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .copied();
+            (Some(summary), main)
+        }
+        _ => (None, None),
+    };
+    record.faces = face_summary;
+
+    let embedding = if engine.has_arcface() {
+        match main_box {
+            Some(b) => {
+                let crop = imganalyze::ai::crop_face_with_margin(&img, &b);
+                engine.arcface_embed(&crop).and_then(|r| r.ok())
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+    Ok((record, embedding))
 }
 
 #[tauri::command]
@@ -232,10 +271,11 @@ fn run_analysis(
     }
 
     // Paso 2: cómputo paralelo. Cada entrada puede:
-    //  - Full hit: schema + model coinciden → usa registro cacheado.
-    //  - Partial hit: schema coincide pero model no → reusa métricas,
-    //    recalcula SOLO la parte de IA.
-    //  - Miss: análisis completo.
+    //  - Full hit: schema + model coinciden → usa registro cacheado
+    //    junto con el embedding cacheado (None si fue cacheado pre-ArcFace).
+    //  - Partial hit: schema coincide pero model no → reusa métricas
+    //    objetivas, recalcula la parte de IA Y el embedding.
+    //  - Miss: análisis completo (record + embedding).
     let progress = std::sync::atomic::AtomicUsize::new(0);
     let ai_ref = ai_engine.as_ref();
     let computed: Vec<ComputedEntry> = prepared
@@ -255,44 +295,46 @@ fn run_analysis(
                 },
             );
 
-            let result: Result<(AnalysisRecord, CacheHit), String> = match cached {
+            let result: Result<(AnalysisRecord, Option<Vec<f32>>, CacheHit), String> = match cached
+            {
                 Some(entry) if entry.schema_version == SCHEMA_VERSION => {
                     if entry.model_version == model_version {
-                        Ok((entry.record.clone(), CacheHit::Full))
+                        Ok((
+                            entry.record.clone(),
+                            entry.face_embedding.clone(),
+                            CacheHit::Full,
+                        ))
                     } else {
                         recompute_ai_fields(file, entry.record.clone(), ai_ref)
-                            .map(|r| (r, CacheHit::Partial))
+                            .map(|(r, emb)| (r, emb, CacheHit::Partial))
                             .map_err(|e| e.to_string())
                     }
                 }
-                _ => analyze_photo(file, ai_ref)
-                    .map(|r| (r, CacheHit::Miss))
+                _ => analyze_photo_with_embedding(file, ai_ref)
+                    .map(|(r, emb)| (r, emb, CacheHit::Miss))
                     .map_err(|e| e.to_string()),
             };
             (file.clone(), *key, result)
         })
         .collect();
 
-    // Paso 3: separa registros, errores y prepara escritura al caché.
+    // Paso 3: separa registros, errores, embeddings y prepara escritura al caché.
     let mut records: Vec<AnalysisRecord> = Vec::new();
+    let mut embeddings: Vec<Option<Vec<f32>>> = Vec::new();
+    let mut hits: Vec<CacheHit> = Vec::new();
+    let mut keys_for_write: Vec<(usize, [u8; 32])> = Vec::new();
     let mut desde_cache = 0usize;
-    let mut to_write: Vec<([u8; 32], CachedEntry)> = Vec::new();
-    for (path, key, result) in computed {
+    for (idx, (path, key, result)) in computed.into_iter().enumerate() {
         match result {
-            Ok((rec, hit)) => {
+            Ok((rec, emb, hit)) => {
                 if matches!(hit, CacheHit::Full) {
                     desde_cache += 1;
                 } else {
-                    to_write.push((
-                        key,
-                        CachedEntry {
-                            schema_version: SCHEMA_VERSION,
-                            model_version,
-                            record: rec.clone(),
-                        },
-                    ));
+                    keys_for_write.push((idx, key));
                 }
                 records.push(rec);
+                embeddings.push(emb);
+                hits.push(hit);
             }
             Err(e) => errores.push(AnalysisFileError {
                 ruta: path,
@@ -300,9 +342,40 @@ fn run_analysis(
             }),
         }
     }
+    // `idx` arriba se refiere a la posición ANTES de filtrar errores,
+    // pero como solo agregamos los Ok, los índices en `records` y
+    // `keys_for_write` coinciden naturalmente.
 
-    // Escribe todas las entradas nuevas/actualizadas en una sola
-    // transacción para minimizar el overhead.
+    // Paso 3.5: clustering de personas sobre todo el lote (cache hits
+    // incluidos cuando tienen embedding cacheado).
+    if embeddings.iter().any(|e| e.is_some()) {
+        let assignments = cluster_persons(&embeddings, ARCFACE_CLUSTER_THRESHOLD);
+        for (rec, pid) in records.iter_mut().zip(assignments) {
+            // Si tenemos embedding (fresh o cached) la nueva asignación
+            // es autoritativa. Si no, conservamos el person_id previo
+            // (que vendrá de un análisis anterior si lo había).
+            if pid.is_some() {
+                rec.person_id = pid;
+            }
+        }
+    }
+
+    // Escribe TODAS las entradas no-full-hit a la caché ahora que ya
+    // tienen el person_id final del clustering.
+    let to_write: Vec<([u8; 32], CachedEntry)> = keys_for_write
+        .into_iter()
+        .map(|(i, key)| {
+            (
+                key,
+                CachedEntry {
+                    schema_version: SCHEMA_VERSION,
+                    model_version,
+                    record: records[i].clone(),
+                    face_embedding: embeddings[i].clone(),
+                },
+            )
+        })
+        .collect();
     if let Some(cache) = cache.as_ref() {
         let _ = cache.put_many(&to_write);
     }
@@ -361,7 +434,7 @@ enum CacheHit {
 type ComputedEntry = (
     PathBuf,
     [u8; 32],
-    Result<(AnalysisRecord, CacheHit), String>,
+    Result<(AnalysisRecord, Option<Vec<f32>>, CacheHit), String>,
 );
 
 fn should_pre_reject(rec: &AnalysisRecord) -> bool {

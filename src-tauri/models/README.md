@@ -5,6 +5,15 @@ Coloca aquí los modelos ONNX que la capa de IA carga al activar
 
 - `aesthetic.onnx` — modelo de puntaje estético tipo NIMA.
 - `faces.onnx` — modelo de detección de caras.
+- `arcface.onnx` — modelo de reconocimiento facial (embeddings 512D).
+  Habilita el agrupamiento por persona en la etapa Depurar. Sin este
+  archivo, todas las demás funciones (estética, detección, scoring)
+  siguen funcionando — solo `person_id` queda en `null`.
+  Espera entrada NHWC `(1, 112, 112, 3)` normalizada a `(x-127.5)/128`
+  y produce embedding `[1, 512]` que el motor L2-normaliza.
+  Fuente probada: `huggingface.co/garavv/arcface-onnx/resolve/main/arc.onnx`
+  (ResNet100 ArcFace, ~130 MB). Para descargar:
+  `bash scripts/download-models.sh`.
 
 Estos archivos se empaquetan dentro del binario gracias al patrón
 `models/*.onnx` declarado en `bundle.resources` de

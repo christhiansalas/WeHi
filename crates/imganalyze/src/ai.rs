@@ -297,22 +297,26 @@ pub fn crop_face_with_margin(img: &DynamicImage, b: &FaceBox) -> DynamicImage {
     img.crop_imm(x1, y1, crop_w, crop_h)
 }
 
-/// Preprocesa el recorte de cara como espera ArcFace/InsightFace:
-/// RGB, NCHW, `(x - 127.5) / 128.0`.
+/// Preprocesa el recorte de cara para ArcFace.
+///
+/// Layout NHWC `(1, size, size, 3)`: el modelo distribuido en
+/// `garavv/arcface-onnx` (y la mayoría de exports TF→ONNX de ArcFace)
+/// usa canales al final. Normalización estándar InsightFace:
+/// `(x - 127.5) / 128`.
 fn preprocess_arcface(face: &DynamicImage, size: u32) -> Tensor {
     let small = face
         .resize_exact(size, size, FilterType::Triangle)
         .to_rgb8();
-    let mut data = vec![0f32; 3 * (size as usize) * (size as usize)];
-    let plane = (size as usize) * (size as usize);
+    let s = size as usize;
+    let mut data = vec![0f32; s * s * 3];
     for (i, pixel) in small.pixels().enumerate() {
         let [r, g, b] = pixel.0;
-        data[i] = (r as f32 - 127.5) / 128.0;
-        data[plane + i] = (g as f32 - 127.5) / 128.0;
-        data[2 * plane + i] = (b as f32 - 127.5) / 128.0;
+        data[i * 3] = (r as f32 - 127.5) / 128.0;
+        data[i * 3 + 1] = (g as f32 - 127.5) / 128.0;
+        data[i * 3 + 2] = (b as f32 - 127.5) / 128.0;
     }
-    tract_ndarray::Array4::from_shape_vec((1, 3, size as usize, size as usize), data)
-        .expect("forma NCHW válida")
+    tract_ndarray::Array4::from_shape_vec((1, s, s, 3), data)
+        .expect("forma NHWC válida")
         .into_tensor()
 }
 
