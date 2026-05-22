@@ -111,7 +111,7 @@ jobs:
       - run: npm ci
 
       - name: Build Tauri bundle
-        run: npm run tauri -- build
+        run: npm run tauri:build
 
       - name: Upload bundle (macOS)
         if: matrix.os == 'macos-latest'
@@ -119,9 +119,9 @@ jobs:
         with:
           name: wehi-macos
           path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app
-          if-no-files-found: warn
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/macos/*.app
+          if-no-files-found: error
 
       - name: Upload bundle (Windows)
         if: matrix.os == 'windows-latest'
@@ -129,9 +129,9 @@ jobs:
         with:
           name: wehi-windows
           path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-          if-no-files-found: warn
+            target/release/bundle/msi/*.msi
+            target/release/bundle/nsis/*.exe
+          if-no-files-found: error
 
       - name: Upload bundle (Linux)
         if: matrix.os == 'ubuntu-22.04'
@@ -139,6 +139,6 @@ jobs:
         with:
           name: wehi-linux
           path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
-          if-no-files-found: warn
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
