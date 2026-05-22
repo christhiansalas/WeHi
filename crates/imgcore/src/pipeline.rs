@@ -16,11 +16,12 @@ use std::path::{Path, PathBuf};
 use image::DynamicImage;
 
 use crate::adjust;
+use crate::compose_logo_auto as compose_logo;
 use crate::config::{OutputFormat, Preset, ResizeConfig, ResizeMode};
 use crate::decode::decode;
 use crate::encode::encode_image;
 use crate::error::ImgError;
-use crate::overlay::{compose_logo, LoadedLogo};
+use crate::overlay::LoadedLogo;
 use crate::resize::resize_image;
 use crate::text;
 use crate::video;

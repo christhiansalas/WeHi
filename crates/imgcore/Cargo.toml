@@ -4,6 +4,13 @@ version = "0.1.0"
 edition = "2021"
 description = "Motor de procesamiento de imágenes de WeHi"
 
+[features]
+default = ["gpu"]
+# Acelera el compositing del logo en GPU con wgpu. Si falla la inicialización
+# (CI headless, sandbox), cae a CPU automáticamente — el feature es seguro
+# de dejar prendido por defecto.
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
@@ -14,6 +21,9 @@ rawler = "0.7"
 webp = "0.3"
 ab_glyph = "0.2"
 ts-rs = { version = "10", features = ["serde-compat"] }
+wgpu = { version = "23", optional = true }
+pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
 
 [dev-dependencies]
 serde_json = "1"

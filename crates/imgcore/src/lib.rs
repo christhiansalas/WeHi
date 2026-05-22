@@ -11,6 +11,8 @@ pub mod decode;
 pub mod encode;
 pub mod error;
 pub mod exif;
+#[cfg(feature = "gpu")]
+pub mod gpu_overlay;
 pub mod overlay;
 pub mod pipeline;
 pub mod raw;
@@ -26,7 +28,15 @@ pub use config::{
 pub use decode::decode;
 pub use encode::encode_image;
 pub use error::ImgError;
+#[cfg(feature = "gpu")]
+pub use gpu_overlay::{compose_logo_auto, compose_logo_gpu, GpuOverlay};
 pub use overlay::{compose_logo, load_logo, LoadedLogo};
+
+/// Compositor activo en runtime: GPU si el feature está prendido y el
+/// adapter pudo inicializarse, CPU en caso contrario. Las llamadas
+/// internas del pipeline pasan por aquí.
+#[cfg(not(feature = "gpu"))]
+pub use overlay::compose_logo as compose_logo_auto;
 pub use pipeline::{
     encode_pipeline, encode_pipeline_named, process_file, process_file_with_progress,
     process_image, EncodedImage, LogoMap,
