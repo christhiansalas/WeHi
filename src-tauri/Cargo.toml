@@ -1,0 +1,32 @@
+[package]
+name = "wehi"
+version = "0.1.0"
+description = "WeHi — fotografía en masa: curar y procesar"
+authors = ["WeHi"]
+edition = "2021"
+
+[lib]
+name = "wehi_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+imgcore = { path = "../crates/imgcore" }
+imganalyze = { path = "../crates/imganalyze" }
+rayon = "1"
+base64 = "0.22"
+redb = "2"
+blake3 = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+notify = "8"
+ts-rs = { version = "10", features = ["serde-compat"] }

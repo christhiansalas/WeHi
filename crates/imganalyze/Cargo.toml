@@ -1,0 +1,19 @@
+[package]
+name = "imganalyze"
+version = "0.1.0"
+edition = "2021"
+description = "Motor de curación de WeHi: análisis, deduplicación, calidad, IA y puntaje"
+
+[dependencies]
+imgcore = { path = "../imgcore" }
+serde = { version = "1", features = ["derive"] }
+blake3 = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+tract-onnx = "0.21"
+rayon = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+kamadak-exif = "0.6"
+ts-rs = { version = "10", features = ["serde-compat"] }
+
+[dev-dependencies]
+serde_json = "1"
