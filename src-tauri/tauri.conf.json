@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "app", "nsis", "msi"],
+    "targets": ["dmg", "app", "nsis", "msi", "deb", "appimage"],
     "category": "Photography",
     "shortDescription": "Fotografía en masa: curar y procesar.",
     "longDescription": "WeHi cura, depura y procesa fotos en masa. Redimensiona, aplica marca de agua y agrupa duplicados.",
