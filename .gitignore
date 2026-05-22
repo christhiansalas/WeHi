@@ -34,3 +34,6 @@ src-tauri/models/*.onnx
 # Cache de análisis y batch activo
 *.redb
 active_batch.json
+
+# Claude Code internals
+.claude/
