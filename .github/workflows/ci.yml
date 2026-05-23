@@ -162,15 +162,24 @@ jobs:
       - name: Show artifact tree
         run: find artifacts -type f -not -name '*.app' | sort
 
+      - name: Renombrar a nombres estables
+        # Los assets se renombran a WeHi_<OS>.<ext> para que las URLs
+        # /releases/latest/download/ sigan funcionando entre versiones
+        # sin tener que actualizar la web cada vez.
+        run: |
+          set -eux
+          mkdir -p release
+          cp artifacts/wehi-macos/dmg/*.dmg          release/WeHi_macOS.dmg
+          cp artifacts/wehi-windows/nsis/*.exe       release/WeHi_Windows.exe
+          cp artifacts/wehi-windows/msi/*.msi        release/WeHi_Windows.msi
+          cp artifacts/wehi-linux/deb/*.deb          release/WeHi_Linux.deb
+          cp artifacts/wehi-linux/appimage/*.AppImage release/WeHi_Linux.AppImage
+          ls -lh release/
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/wehi-macos/dmg/*.dmg
-            artifacts/wehi-windows/msi/*.msi
-            artifacts/wehi-windows/nsis/*.exe
-            artifacts/wehi-linux/deb/*.deb
-            artifacts/wehi-linux/appimage/*.AppImage
+          files: release/*
           generate_release_notes: true
           draft: false
           prerelease: false
