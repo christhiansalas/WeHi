@@ -3,8 +3,16 @@
 //! El contexto (device, queue, pipeline) se inicializa UNA vez por
 //! proceso vía `OnceLock`. Si la inicialización falla (CI headless,
 //! sandbox sin adapter), `shared()` devuelve `None` y `compose_logo_auto`
-//! cae al camino CPU. Una vez el contexto existe, se comparte entre
-//! hilos de rayon — wgpu garantiza Send+Sync en Device y Queue.
+//! cae al camino CPU.
+//!
+//! **Nota sobre paralelismo:** el contexto se comparte entre hilos
+//! de rayon (Device/Queue son Send+Sync), pero el `device.poll(Wait)`
+//! del readback bloquea hasta que la GPU termina. En la práctica
+//! wgpu serializa internamente los submits y cada `compose()` espera
+//! su turno, así que múltiples hilos rayon no logran paralelismo GPU
+//! real — el speedup viene de mover el trabajo de blend del CPU a la
+//! GPU, no de overlaps. Para lotes donde el blend NO es cuello de
+//! botella (raw decode + resize dominan), el camino CPU es competitivo.
 
 use std::sync::OnceLock;
 

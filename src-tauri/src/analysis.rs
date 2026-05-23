@@ -324,13 +324,18 @@ fn run_analysis(
     let mut hits: Vec<CacheHit> = Vec::new();
     let mut keys_for_write: Vec<(usize, [u8; 32])> = Vec::new();
     let mut desde_cache = 0usize;
-    for (idx, (path, key, result)) in computed.into_iter().enumerate() {
+    for (path, key, result) in computed {
         match result {
             Ok((rec, emb, hit)) => {
+                // Usamos la longitud ACTUAL de `records` como índice
+                // antes del push: así los índices de `keys_for_write`
+                // siempre apuntan a una posición válida de `records`,
+                // sin importar cuántos errores hubo antes.
+                let i = records.len();
                 if matches!(hit, CacheHit::Full) {
                     desde_cache += 1;
                 } else {
-                    keys_for_write.push((idx, key));
+                    keys_for_write.push((i, key));
                 }
                 records.push(rec);
                 embeddings.push(emb);
@@ -342,9 +347,6 @@ fn run_analysis(
             }),
         }
     }
-    // `idx` arriba se refiere a la posición ANTES de filtrar errores,
-    // pero como solo agregamos los Ok, los índices en `records` y
-    // `keys_for_write` coinciden naturalmente.
 
     // Paso 3.5: clustering de personas sobre todo el lote (cache hits
     // incluidos cuando tienen embedding cacheado).
@@ -533,6 +535,7 @@ pub fn move_rejects(
     analysis_state: State<'_, AnalysisState>,
     target_subfolder: String,
 ) -> Result<MoveRejectsReport, String> {
+    // Tomamos snapshot bajo lock, soltamos para no bloquear durante I/O.
     let resultados = {
         let guard = analysis_state
             .results
@@ -543,6 +546,7 @@ pub fn move_rejects(
 
     let mut movidos = Vec::new();
     let mut errores = Vec::new();
+    let mut path_updates: Vec<(PathBuf, PathBuf)> = Vec::new(); // (vieja, nueva)
     let considerados = resultados
         .iter()
         .filter(|r| r.status == CullStatus::Reject)
@@ -576,13 +580,19 @@ pub fn move_rejects(
         };
         let dest = dest_dir.join(file_name);
         match std::fs::rename(&rec.path, &dest) {
-            Ok(()) => movidos.push(dest),
+            Ok(()) => {
+                path_updates.push((rec.path.clone(), dest.clone()));
+                movidos.push(dest);
+            }
             Err(rename_err) => {
                 // Fallback cross-device (EXDEV) o errores de TCC:
                 // intentar copy + remove explícito.
                 match std::fs::copy(&rec.path, &dest).and_then(|_| std::fs::remove_file(&rec.path))
                 {
-                    Ok(()) => movidos.push(dest),
+                    Ok(()) => {
+                        path_updates.push((rec.path.clone(), dest.clone()));
+                        movidos.push(dest);
+                    }
                     Err(copy_err) => errores.push(AnalysisFileError {
                         ruta: rec.path.clone(),
                         mensaje: format!(
@@ -590,6 +600,20 @@ pub fn move_rejects(
                             dest.display()
                         ),
                     }),
+                }
+            }
+        }
+    }
+
+    // Sincroniza el estado en memoria con las rutas nuevas para que
+    // `get_analysis_results` no devuelva paths fantasma. La UI sigue
+    // mostrando el registro (con status=Reject) pero apuntando al
+    // archivo realmente movido.
+    if !path_updates.is_empty() {
+        if let Ok(mut guard) = analysis_state.results.lock() {
+            for rec in guard.iter_mut() {
+                if let Some((_, new_path)) = path_updates.iter().find(|(old, _)| *old == rec.path) {
+                    rec.path = new_path.clone();
                 }
             }
         }

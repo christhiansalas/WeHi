@@ -125,14 +125,21 @@ fn active_batch_path(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn write_active_batch(app: &AppHandle, batch: &ActiveBatch) {
+    // Escribe atómico: tmp + rename. Sin esto un crash a mitad del
+    // write deja `active_batch.json` truncado y la próxima corrida
+    // no puede deserializarlo (silent corruption → batch perdido).
     let Some(path) = active_batch_path(app) else {
         return;
     };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Ok(json) = serde_json::to_string(batch) {
-        let _ = std::fs::write(&path, json);
+    let Ok(json) = serde_json::to_string(batch) else {
+        return;
+    };
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, &json).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
     }
 }
 
