@@ -6,12 +6,13 @@
 //!   últimos resultados del lote (compartidos con todos los
 //!   comandos de curación).
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use image::DynamicImage;
 use imganalyze::AnalysisRecord;
+use imgcore::LoadedLogo;
 
 /// LRU simple para imágenes decodificadas usadas en la previsualización.
 /// Capacidad por defecto 8 entradas; cada `DynamicImage` reescalada a
@@ -50,6 +51,12 @@ impl PreviewCache {
     }
 }
 
+/// Entrada del cache de logos: el `mtime` del archivo en disco
+/// (segundos epoch) y el `LoadedLogo` ya decodificado. Cuando el
+/// usuario reemplaza el PNG del logo, el mtime cambia y la entrada
+/// se invalida automáticamente al siguiente lookup.
+type LogoCacheEntry = (u64, Arc<LoadedLogo>);
+
 #[derive(Debug)]
 pub struct AppState {
     pub cancel_flag: Arc<AtomicBool>,
@@ -61,6 +68,11 @@ pub struct AppState {
     pub video_concurrency: AtomicUsize,
     /// LRU de imágenes decodificadas para previsualización rápida.
     pub preview_cache: Mutex<PreviewCache>,
+    /// Cache de logos decodificados (logo_id → (mtime, Arc<LoadedLogo>)).
+    /// Sin esto, cada movimiento de slider del preset re-decodificaba
+    /// el PNG del logo (~50 ms cada uno). El cache se invalida solo
+    /// cuando cambia el mtime del archivo del logo.
+    pub logo_cache: Mutex<HashMap<String, LogoCacheEntry>>,
 }
 
 impl AppState {
@@ -70,6 +82,7 @@ impl AppState {
             max_threads: AtomicUsize::new(0),
             video_concurrency: AtomicUsize::new(2),
             preview_cache: Mutex::new(PreviewCache::new(8)),
+            logo_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -88,10 +101,15 @@ impl Default for AppState {
     }
 }
 
-#[derive(Debug)]
 pub struct AnalysisState {
     pub cancel_flag: Arc<AtomicBool>,
     pub results: Arc<Mutex<Vec<AnalysisRecord>>>,
+    /// Cache redb compartido entre corridas del análisis. Se inicializa
+    /// perezosamente la primera vez que se necesita y se reusa después,
+    /// evitando el costo de `Database::create` (que adquiere file lock)
+    /// en cada batch. `None` si la inicialización falló alguna vez.
+    /// `Debug` omitido a propósito (redb::Database no lo implementa).
+    pub cache: Arc<Mutex<Option<Arc<crate::cache::AnalysisCache>>>>,
 }
 
 impl AnalysisState {
@@ -99,6 +117,7 @@ impl AnalysisState {
         Self {
             cancel_flag: Arc::new(AtomicBool::new(false)),
             results: Arc::new(Mutex::new(Vec::new())),
+            cache: Arc::new(Mutex::new(None)),
         }
     }
 

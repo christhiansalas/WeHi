@@ -1,6 +1,6 @@
 [package]
 name = "imganalyze"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Motor de curación de WeHi: análisis, deduplicación, calidad, IA y puntaje"
 

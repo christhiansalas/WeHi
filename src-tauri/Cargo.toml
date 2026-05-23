@@ -1,6 +1,6 @@
 [package]
 name = "wehi"
-version = "0.1.0"
+version = "0.1.1"
 description = "WeHi — fotografía en masa: curar y procesar"
 authors = ["WeHi"]
 edition = "2021"

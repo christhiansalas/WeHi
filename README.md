@@ -148,11 +148,19 @@ Registrados en `src-tauri/src/lib.rs`:
 
 ## Desarrollo
 
-Requisitos: **Rust** (estable) y **Node** 18+. En macOS además Xcode CLI.
+Requisitos:
+- **Rust** ≥ 1.75 estable (`rustup install stable`)
+- **Node** ≥ 18 (`brew install node` o `nvm install --lts`)
+- **ffmpeg** en el PATH — necesario para procesar y previsualizar videos.
+  Sin él, las funciones de video fallan silenciosamente. En macOS:
+  `brew install ffmpeg` o `pip install static-ffmpeg`.
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`)
+- **Linux:** `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev libayatana-appindicator3-dev`
 
 ```bash
 npm install
-npm run tauri dev      # arranca la app de escritorio
+bash scripts/download-models.sh   # opcional: baja arcface.onnx para personas
+npm run tauri dev                 # arranca la app de escritorio
 ```
 
 ### Verificación
@@ -170,14 +178,34 @@ npm run build                                        # bundle vite
 Coloca los `.onnx` en `src-tauri/models/`:
 - `aesthetic.onnx` — puntaje estético tipo NIMA.
 - `faces.onnx` — detección de caras.
+- `arcface.onnx` — embeddings para reconocer y agrupar personas en el lote.
+  Bajar con `bash scripts/download-models.sh`.
 
 Quedan empaquetados con el bundle. El usuario también puede sustituirlos
 en `<app_data>/models/` sin reinstalar (esa ruta tiene prioridad). Ver
 [`src-tauri/models/README.md`](src-tauri/models/README.md).
 
 Sin modelos, la opción "Incluir análisis de IA" en Depurar produce
-registros con `aesthetic = null` y `faces = null` (las métricas
+registros con `aesthetic`, `faces` y `person_id` en `null` (las métricas
 objetivas siguen funcionando).
+
+### Distribución
+
+Releases automáticos en GitHub cuando se empuja un tag `v*`:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+CI compila los 3 OS, firma + notariza el `.dmg` de macOS con tu
+Developer ID (vía secrets `APPLE_*`) y publica el Release con URLs
+estables `https://github.com/<user>/<repo>/releases/latest/download/WeHi_<OS>.<ext>`.
+Ver [`DISTRIBUCION.md`](DISTRIBUCION.md).
+
+### Licencia
+
+Por definir. Cualquier modelo ONNX agregado en `src-tauri/models/`
+hereda la licencia de su origen — verifica antes de redistribuir.
 
 ## Pipeline en cifras
 

@@ -204,6 +204,22 @@ pub fn analyze_batch(
     let path_refs: Vec<&Path> = model_paths.iter().map(|p| p.as_path()).collect();
     let model_version = compute_model_version(use_ai && ai_engine.is_some(), &path_refs);
 
+    // Reusa la conexión redb cacheada en AnalysisState — abrir la DB
+    // adquiere file lock exclusivo, así que abrirla en cada batch
+    // bloqueaba ~50 ms y rompía con corridas concurrentes.
+    let cache_handle = {
+        let mut guard = analysis_state
+            .cache
+            .lock()
+            .map_err(|e| format!("lock cache: {e}"))?;
+        if guard.is_none() {
+            if let Ok(c) = AnalysisCache::open(&cache_path) {
+                *guard = Some(Arc::new(c));
+            }
+        }
+        guard.clone()
+    };
+
     let app_clone = app.clone();
     std::thread::spawn(move || {
         run_analysis(
@@ -211,7 +227,7 @@ pub fn analyze_batch(
             files,
             ai_engine,
             model_version,
-            cache_path,
+            cache_handle,
             cancel,
             results_arc,
             dedup,
@@ -226,7 +242,7 @@ fn run_analysis(
     files: Vec<PathBuf>,
     ai_engine: Option<AiEngine>,
     model_version: u32,
-    cache_path: PathBuf,
+    cache: Option<Arc<AnalysisCache>>,
     cancel: Arc<AtomicBool>,
     results_arc: Arc<Mutex<Vec<AnalysisRecord>>>,
     dedup_config: DedupConfig,
@@ -239,7 +255,6 @@ fn run_analysis(
         time_window_seconds = dedup_config.time_window_seconds,
         "análisis del lote iniciado"
     );
-    let cache = AnalysisCache::open(&cache_path).ok();
 
     // Paso 1: metadata + lookup en caché por archivo (rápido, secuencial).
     let mut prepared: Vec<(PathBuf, [u8; 32], Option<CachedEntry>)> = Vec::with_capacity(total);
@@ -278,11 +293,14 @@ fn run_analysis(
     //  - Miss: análisis completo (record + embedding).
     let progress = std::sync::atomic::AtomicUsize::new(0);
     let ai_ref = ai_engine.as_ref();
-    let computed: Vec<ComputedEntry> = prepared
+    // `None` = el archivo se saltó por cancelación; NO se reporta como
+    // error en la UI. La señal de cancelación al final del lote se
+    // propaga aparte via `cancelado`.
+    let computed: Vec<Option<ComputedEntry>> = prepared
         .par_iter()
         .map(|(file, key, cached)| {
             if cancel.load(Ordering::SeqCst) {
-                return (file.clone(), *key, Err("cancelado".to_string()));
+                return None;
             }
             let n = progress.fetch_add(1, Ordering::SeqCst) + 1;
             let _ = app.emit(
@@ -314,17 +332,18 @@ fn run_analysis(
                     .map(|(r, emb)| (r, emb, CacheHit::Miss))
                     .map_err(|e| e.to_string()),
             };
-            (file.clone(), *key, result)
+            Some((file.clone(), *key, result))
         })
         .collect();
 
     // Paso 3: separa registros, errores, embeddings y prepara escritura al caché.
+    // Los `None` (archivos cancelados) se filtran aquí — no se reportan como error.
     let mut records: Vec<AnalysisRecord> = Vec::new();
     let mut embeddings: Vec<Option<Vec<f32>>> = Vec::new();
     let mut hits: Vec<CacheHit> = Vec::new();
     let mut keys_for_write: Vec<(usize, [u8; 32])> = Vec::new();
     let mut desde_cache = 0usize;
-    for (path, key, result) in computed {
+    for (path, key, result) in computed.into_iter().flatten() {
         match result {
             Ok((rec, emb, hit)) => {
                 // Usamos la longitud ACTUAL de `records` como índice

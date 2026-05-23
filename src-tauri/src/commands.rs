@@ -218,7 +218,11 @@ pub fn scan_paths(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
     Ok(out)
 }
 
-fn resolve_logos(app: &AppHandle, preset: &Preset) -> Result<imgcore::LogoMap, String> {
+fn resolve_logos(
+    app: &AppHandle,
+    state: &AppState,
+    preset: &Preset,
+) -> Result<imgcore::LogoMap, String> {
     use std::collections::HashMap;
     let mut map: HashMap<String, imgcore::LoadedLogo> = HashMap::new();
     let dir = logos_dir(app)?;
@@ -227,7 +231,31 @@ fn resolve_logos(app: &AppHandle, preset: &Preset) -> Result<imgcore::LogoMap, S
             continue;
         }
         let path = dir.join(&cfg.logo_id);
-        let logo = imgcore::load_logo(&path).map_err(|e| e.to_string())?;
+        let mtime = file_fingerprint(&path).map(|(m, _)| m).unwrap_or(0);
+
+        // Lookup en cache: hit si (logo_id, mtime) coincide.
+        let cached = {
+            let guard = state
+                .logo_cache
+                .lock()
+                .map_err(|e| format!("logo_cache lock: {e}"))?;
+            guard
+                .get(&cfg.logo_id)
+                .filter(|(cached_mtime, _)| *cached_mtime == mtime)
+                .map(|(_, arc)| arc.clone())
+        };
+        let logo: imgcore::LoadedLogo = if let Some(arc) = cached {
+            (*arc).clone()
+        } else {
+            let fresh = imgcore::load_logo(&path).map_err(|e| e.to_string())?;
+            if let Ok(mut guard) = state.logo_cache.lock() {
+                guard.insert(
+                    cfg.logo_id.clone(),
+                    (mtime, std::sync::Arc::new(fresh.clone())),
+                );
+            }
+            fresh
+        };
         map.insert(cfg.logo_id.clone(), logo);
     }
     Ok(map)
@@ -245,7 +273,7 @@ pub fn process_batch(
     let max_threads = state.max_threads.load(Ordering::Relaxed);
     let video_concurrency = state.video_concurrency.load(Ordering::Relaxed).max(1);
 
-    let logos = resolve_logos(&app, &preset)?;
+    let logos = resolve_logos(&app, &state, &preset)?;
     let app_clone = app.clone();
     std::thread::spawn(move || {
         queue::run_batch(
@@ -268,7 +296,7 @@ pub fn process_preview(
     file: PathBuf,
     preset: Preset,
 ) -> Result<PreviewResult, String> {
-    let logos = resolve_logos(&app, &preset)?;
+    let logos = resolve_logos(&app, &state, &preset)?;
 
     // Cache LRU de imágenes ya decodificadas + reescaladas a ≤1024 px.
     // Hace que mover sliders del preset reuse la decodificación.
