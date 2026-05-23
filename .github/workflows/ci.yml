@@ -125,6 +125,32 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+      - name: Notarizar y staple del .dmg
+        # Tauri notariza el .app pero deja el .dmg sin staple — sin
+        # esto, macOS sigue mostrando "Unnotarized" al verificar el
+        # disco de instalación. Submit + staple del .dmg cierran el
+        # círculo. Solo corre si los secrets están seteados.
+        if: matrix.os == 'macos-latest' && env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euxo pipefail
+          DMG=$(find target/release/bundle/dmg -name '*.dmg' | head -1)
+          [ -n "$DMG" ] || { echo "no se encontró el .dmg"; exit 1; }
+          echo "→ Sometiendo $DMG a Apple notarytool..."
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          echo "→ Adjuntando ticket al .dmg..."
+          xcrun stapler staple "$DMG"
+          echo "→ Verificando..."
+          xcrun stapler validate "$DMG"
+          spctl --assess --type install -vvv "$DMG" || true
+
       - name: Upload bundle (macOS)
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
