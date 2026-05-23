@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -142,3 +143,35 @@ jobs:
             target/release/bundle/deb/*.deb
             target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show artifact tree
+        run: find artifacts -type f -not -name '*.app' | sort
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/wehi-macos/dmg/*.dmg
+            artifacts/wehi-windows/msi/*.msi
+            artifacts/wehi-windows/nsis/*.exe
+            artifacts/wehi-linux/deb/*.deb
+            artifacts/wehi-linux/appimage/*.AppImage
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
