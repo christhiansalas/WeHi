@@ -113,6 +113,17 @@ jobs:
 
       - name: Build Tauri bundle
         run: npm run tauri:build
+        env:
+          # Solo se usan en el runner de macOS — Tauri ignora estos
+          # vars en Linux/Windows. Si los secrets no están seteados,
+          # las vars quedan vacías y se construye sin firmar (igual
+          # que antes).
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload bundle (macOS)
         if: matrix.os == 'macos-latest'

@@ -18,6 +18,14 @@ if [ "$(uname -s)" != "Darwin" ]; then
   exit 0
 fi
 
+# Si CI ya firmó con un Developer ID real (APPLE_SIGNING_IDENTITY presente),
+# NO sobreescribir con firma ad-hoc — eso invalidaría la firma de Apple
+# y rompería la notarización.
+if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  echo "→ APPLE_SIGNING_IDENTITY presente, dejando la firma de Apple intacta"
+  exit 0
+fi
+
 APP_PATH="${1:-target/release/bundle/macos/WeHi.app}"
 
 if [ ! -d "$APP_PATH" ]; then
